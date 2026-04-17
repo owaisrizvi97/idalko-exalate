@@ -28,8 +28,3 @@ Run terraform plan on pull request and a simulated terraform apply on merge to m
 Explain the reasoning behind your Terraform module structure
 Explain the secret management strategy you chose and why it fits this team's scale
 Describe what observability tools you would add given more time and budget
-Time
-Plan for approximately 2-3 hours. If time runs short, prioritize depth over breadth: a well-reasoned partial submission with clear documentation of trade-offs is more useful than a rushed complete one. Wherever you stop, leave a brief note in your README explaining what you would have done next and why.
-
-Submission
-Push your work to a personal Git repository (GitHub, GitLab, or Bitbucket) and share the link. We will review the submission together in a follow-up conversation, so be prepared to walk through your decisions and answer questions about the choices you made.
