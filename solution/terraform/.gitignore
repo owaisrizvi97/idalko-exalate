@@ -2,8 +2,7 @@
 # Files that must never be committed.
 # ---------------------------------------------------------------------------
 
-# Real secrets go in terraform.tfvars (only .example is committed).
-terraform.tfvars
+# Auto-generated tfvars (if any).
 *.auto.tfvars
 
 # Local state (state lives in S3 once the backend is enabled).

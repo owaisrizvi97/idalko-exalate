@@ -10,7 +10,6 @@ venv/
 .terraform/
 *.tfstate
 *.tfstate.*
-terraform.tfvars
 *.tfplan
 
 # Tooling
