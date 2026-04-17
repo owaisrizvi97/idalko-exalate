@@ -537,40 +537,11 @@ Neither is warranted for a single internal dashboard.
 
 ---
 
-## Observability Recommendations
-
-Given more time and budget, the following would be added in order of priority:
-
-### 1. CloudWatch Logs (Low effort, high value)
-Install the CloudWatch agent on the EC2 instance to ship application logs (gunicorn access/error logs) to CloudWatch Logs. Enables log search without SSH-ing into the instance.
-
-**Cost:** ~$0.50/GB ingested + $0.03/GB stored. For a low-traffic internal dashboard, this is under $1/month.
-
-### 2. CloudWatch Alarms (Low effort, high value)
-Set up alarms for:
-- EC2 CPU utilization > 80% for 5 minutes
-- RDS free storage space < 2GB
-- RDS CPU utilization > 80% for 5 minutes
-
-Send alerts to an SNS topic (email or Slack webhook).
-
-**Cost:** $0.10/alarm/month. Under $1/month for basic alarms.
-
-### 3. CloudWatch Container Insights (Medium effort)
-If the application grows to multiple containers or ECS, Container Insights provides per-container CPU, memory, and network metrics.
-
-**Cost:** Custom metrics pricing — $0.30/metric/month.
-
-### 4. Application Performance Monitoring (Higher effort, higher budget)
-For deeper application-level visibility (request traces, error rates, latency percentiles), consider AWS X-Ray (pay-per-trace) or a third-party tool like Datadog. Only justified when the application has real users and SLA requirements.
-
----
-
 ## What I Would Do Next
 
 If continuing beyond this submission, in priority order:
 
-1. **HTTPS/TLS** — Add an Application Load Balancer with an ACM certificate. HTTP in production is unacceptable for anything beyond a proof of concept. (~$16/month for ALB)
+1. **HTTPS/TLS** — Use Cloudflare for DNS and its free TLS termination (Flexible or Full mode). This gives you HTTPS without adding AWS infrastructure — no ALB ($16/month), no ACM certificate management. For a single EC2 internal dashboard, an ALB is unnecessary overhead. ALB + ACM becomes the right choice only when you need multi-AZ resilience with Auto Scaling Groups, which isn't justified unless the user base crosses a few hundred concurrent users at peak.
 2. **RDS encryption at rest** — Add `storage_encrypted = true` to the RDS instance. One-line change, zero cost on supported instance types.
 3. **Automated backups** — Remove `skip_final_snapshot = true` and configure automated backups with a 7-day retention period.
 4. **VPC Flow Logs** — Enable flow logs to S3 for network traffic visibility and incident investigation.
