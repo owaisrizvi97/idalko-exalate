@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Terraform
+*.tf
+*.tfvars
+*.tfstate
+*.tfstate.*
+.terraform
+.terraform.lock.hcl
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.venv
+venv
+env
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Project docs / CI (not needed inside the image)
+README.md
+*.md
+.github
+
+# Docker (self)
+Dockerfile
+.dockerignore

@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Files that must never be committed.
+# ---------------------------------------------------------------------------
+
+# Real secrets go in terraform.tfvars (only .example is committed).
+terraform.tfvars
+*.auto.tfvars
+
+# Local state (state lives in S3 once the backend is enabled).
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform working directory (provider plugins, modules, etc.)
+.terraform/
+.terraform.lock.hcl
+
+# Plan files (may contain sensitive values)
+*.tfplan
+tfplan

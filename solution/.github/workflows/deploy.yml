@@ -1,0 +1,164 @@
+# ---------------------------------------------------------------------------
+# Application deploy -- build, push, deploy via SSM
+# ---------------------------------------------------------------------------
+# Flow:
+#   1. Assume the AWS IAM role via OIDC (no stored credentials)
+#   2. Log in to ECR
+#   3. Build the Docker image, tag it with git SHA + 'latest'
+#   4. Push both tags to ECR
+#   5. Run an SSM SendCommand against the EC2 instance:
+#        - authenticate with ECR
+#        - pull the new image
+#        - stop + remove the old container
+#        - start the new container mapping host :80 -> container :8080
+#   6. Poll the command until it succeeds or fails, stream output to logs.
+#
+# Why SSM Run Command (not SSH)?
+#   GitHub Actions runners have dynamic egress IPs that cannot be whitelisted
+#   in an EC2 security group. SSH from runners is therefore not practical.
+#   SSM SendCommand is API-level, authenticated via OIDC -> IAM role, and
+#   scoped (in the role policy) to ONLY this instance and ONLY the
+#   AWS-RunShellScript document.
+#
+# NOTE: to activate on GitHub, move this file to repo root `.github/workflows/`
+# alongside terraform.yml. GitHub only reads workflows from the repo root.
+# ---------------------------------------------------------------------------
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "solution/app.py"
+      - "solution/Dockerfile"
+      - "solution/requirements.txt"
+      - "solution/.dockerignore"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {} # manual trigger (used for first-time bootstrap)
+
+permissions:
+  id-token: write # OIDC
+  contents: read # checkout
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false # do NOT cancel in-progress deploys -- finish safely
+
+jobs:
+  build-push-deploy:
+    name: build, push, deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------
+      # AWS auth via OIDC
+      # ----------------------------------------------------------------
+      # `vars.AWS_ROLE_ARN` is set from the Terraform output
+      # `github_actions_role_arn` after the first apply.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ----------------------------------------------------------------
+      # Build + push image to ECR
+      # ----------------------------------------------------------------
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ECR registry URL derived from the login action's output, so we
+      # don't duplicate account IDs in repo variables.
+      - name: Resolve image tags
+        id: tags
+        run: |
+          IMAGE_URI="${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPOSITORY }}"
+          echo "image_latest=${IMAGE_URI}:latest"       >> "$GITHUB_OUTPUT"
+          echo "image_sha=${IMAGE_URI}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${IMAGE_URI}"                 >> "$GITHUB_OUTPUT"
+
+      # Build from solution/. Dockerfile + app.py + requirements.txt live
+      # there directly (flat layout).
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./solution
+          file: ./solution/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.image_latest }}
+            ${{ steps.tags.outputs.image_sha }}
+          # Cache layers across runs for faster builds.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ----------------------------------------------------------------
+      # Deploy to EC2 via SSM
+      # ----------------------------------------------------------------
+      # The shell script below runs ON THE EC2 INSTANCE (as root, via the
+      # SSM agent). Notes:
+      #   - `set -euo pipefail` -- fail fast on any error
+      #   - Image pulled by tag SHA (immutable) for this specific deploy
+      #   - Old container is stopped+removed before starting the new one
+      #   - --restart=unless-stopped so Docker brings the container back
+      #     after instance reboots or daemon restarts
+      #   - Host :80 -> container :8080 because gunicorn inside the
+      #     container runs as non-root and cannot bind :80 directly
+      - name: Send SSM deploy command
+        id: ssm
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ steps.tags.outputs.image_sha }}"
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+
+          # heredoc -> JSON array via jq so quoting stays sane regardless of
+          # image names / registry URLs.
+          COMMANDS=$(jq -n \
+            --arg registry "$REGISTRY" \
+            --arg image    "$IMAGE" \
+            '[
+              "set -euo pipefail",
+              "aws ecr get-login-password --region '"${{ vars.AWS_REGION }}"' | docker login --username AWS --password-stdin \($registry)",
+              "docker pull \($image)",
+              "docker stop app 2>/dev/null || true",
+              "docker rm app 2>/dev/null || true",
+              "docker run -d --name app --restart=unless-stopped -p 80:8080 \($image)",
+              "docker image prune -f"
+            ]')
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy ${{ github.sha }}" \
+            --parameters "{\"commands\": ${COMMANDS}}" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "command_id=${CMD_ID}" >> "$GITHUB_OUTPUT"
+          echo "Dispatched SSM command: ${CMD_ID}"
+
+      # Poll until the command finishes. `aws ssm wait command-executed`
+      # exits non-zero on failure -- we then surface the output so the
+      # failure reason is visible in the Actions log without SSH-ing in.
+      - name: Wait for deploy + fetch output
+        run: |
+          set +e
+          aws ssm wait command-executed \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --command-id  "${{ steps.ssm.outputs.command_id }}"
+          WAIT_EXIT=$?
+
+          echo "---- SSM command output ----"
+          aws ssm get-command-invocation \
+            --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --command-id  "${{ steps.ssm.outputs.command_id }}" \
+            --output json \
+          | jq -r '"STATUS: \(.Status)\n\nSTDOUT:\n\(.StandardOutputContent)\n\nSTDERR:\n\(.StandardErrorContent)"'
+
+          exit $WAIT_EXIT

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# IDE
+.idea/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.tfplan
+
+# Tooling
+.planning/
+PLAN.md
+CLAUDE.md
+.claude/

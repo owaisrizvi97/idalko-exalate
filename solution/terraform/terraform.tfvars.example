@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Example tfvars. Copy to terraform.tfvars and fill in real values.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored -- never commit real secrets.
+# ---------------------------------------------------------------------------
+
+# Project identity
+project_name = "idalko-exalate"
+environment  = "prod"
+aws_region   = "us-east-1"
+
+# SSH access -- REPLACE with your office IP / VPN CIDR. /32 = single IP.
+# Example: ["203.0.113.42/32", "198.51.100.0/24"]
+allowed_ssh_cidr = ["YOUR_IP_HERE/32"]
+
+# Name of an existing AWS key pair (create in AWS console or `aws ec2 create-key-pair`)
+key_name = "idalko-exalate-key"
+
+# Database
+db_name     = "appdb"
+db_username = "app_admin"
+db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+
+# GitHub repo used for OIDC trust policy
+github_repo = "owaisrizvi97/idalko-exalate"
